@@ -43,7 +43,7 @@
 
 #include "miner.h"
 #include "algos.h"
-#include <cuda_runtime.h>
+#include </opt/cuda/include/cuda_runtime.h>
 
 #ifdef WIN32
 #include <Mmsystem.h>
@@ -643,12 +643,12 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 	uint32_t ntime, nonce;
 	char *ntimestr, *noncestr, *xnonce2str, *nvotestr;
 	uint16_t nvote = 0;
-	
+
 	le32enc(&ntime, work->data[17]);
 	le32enc(&nonce, work->data[19]);
-	
+
 	noncestr = bin2hex((const uchar*)(&nonce), 4);
-	
+
 	if (check_dups)
 		sent = hashlog_already_submittted(work->job_id, nonce);
 	if (sent > 0) {
@@ -663,20 +663,20 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		restart_threads();
 		return true;
 	}
-	
+
 	ntimestr = bin2hex((const uchar*)(&ntime), 4);
-	
+
 	xnonce2str = bin2hex(work->xnonce2, work->xnonce2_len);
-	
+
 	// store to keep/display the solved ratio/diff
 	stratum.sharediff = work->sharediff[idnonce];
-	
+
 	if (net_diff && stratum.sharediff > net_diff && (opt_debug || opt_debug_diff))
 		applog(LOG_INFO, "share diff: %.5f, possible block found!!!",
 			stratum.sharediff);
 	else if (opt_debug_diff)
 		applog(LOG_DEBUG, "share diff: %.5f (x %.1f)", stratum.sharediff, work->shareratio);
-	
+
 		sprintf(s, "{\"method\": \"mining.submit\", \"params\": ["
 			"\"%s\", \"%s\", \"%s\", \"%s\", \"%s\"], \"id\":%d}",
 			pool->user, work->job_id + 8, xnonce2str, ntimestr, noncestr, 10+idnonce);
@@ -873,14 +873,14 @@ static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		memcpy(merkle_root + 32, sctx->job.merkle[i], 32);
 		sha256d(merkle_root, merkle_root, 64);
 	}
-	
+
 	/* Increment extranonce2 */
 	for (i = 0; i < (int)sctx->xnonce2_size && !++sctx->job.xnonce2[i]; i++);
-	
+
 	/* Assemble block header */
 	memset(work->data, 0, sizeof(work->data));
 	work->data[0] = le32dec(sctx->job.version);
-	
+
 	for (i = 0; i < 8; i++)
 	{
 	    work->data[1 + i] = le32dec((uint32_t *)sctx->job.prevhash + i);
@@ -952,7 +952,7 @@ static bool wanna_mine(int thr_id, struct snarfs *sf)
 			return state;
 		}
 	}
-	
+
 
 
 	if (opt_max_temp > 0.0) {
@@ -1118,7 +1118,7 @@ static void *miner_thread(void *userdata)
 				g_work_time = time(NULL);
 				thr_cur_pooln = g_work.pooln;
 			}
-			
+
 		}
 
 		if (thr_id == 0)
@@ -1345,7 +1345,7 @@ static void *miner_thread(void *userdata)
 		gettimeofday(&tv_end, NULL);
 
 		// todo: update all algos to use work->nonces and pdata[19] as counter
-		
+
 		// algos with 2 results in pdata and work.nonces unset
 		work.nonces[0] = nonceptr[0];
 		work.nonces[1] = nonceptr[2];
@@ -1589,7 +1589,7 @@ wait_stratum_url:
 			}
 			pthread_mutex_unlock(&g_work_lock);
 		}
-		
+
 		// check we are on the right pool
 		if (switchn != pool_switch_count) goto pool_switched;
 

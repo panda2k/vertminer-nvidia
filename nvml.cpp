@@ -23,7 +23,7 @@
 
 #include "miner.h"
 #include "nvml.h"
-#include "cuda_runtime.h"
+#include "/opt/cuda/include/cuda_runtime.h"
 
 #ifdef USE_WRAPNVML
 
@@ -53,7 +53,7 @@ uint32_t limit_prev[MAX_GPUS] = { 0 };
 	static void *wrap_dlopen(const char *filename) {
 		HMODULE h = LoadLibrary(filename);
 		if (!h && opt_debug) {
-			applog(LOG_DEBUG, "dlopen(%d): failed to load %s", 
+			applog(LOG_DEBUG, "dlopen(%d): failed to load %s",
 				GetLastError(), filename);
 		}
 		return (void*)h;
@@ -72,7 +72,7 @@ uint32_t limit_prev[MAX_GPUS] = { 0 };
 	static void *wrap_dlopen(const char *filename) {
 		void *h = dlopen(filename, RTLD_NOW);
 		if (h == NULL && opt_debug) {
-			applog(LOG_DEBUG, "dlopen(%d): failed to load %s", 
+			applog(LOG_DEBUG, "dlopen(%d): failed to load %s",
 				errno, filename);
 		}
 		return (void*)h;

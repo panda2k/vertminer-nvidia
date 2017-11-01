@@ -17,7 +17,7 @@
 #include "miner.h"
 #include "nvml.h"
 
-#include "cuda_runtime.h"
+#include "/opt/cuda/include/cuda_runtime.h"
 
 #ifdef __cplusplus
 /* miner.h functions are declared in C type, not C++ */
