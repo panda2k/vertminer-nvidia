@@ -77,7 +77,7 @@ AC_CHECK_LIB([pthread], [pthread_create], PTHREAD_LIBS="-lpthread",
 ))))
 
 AC_CHECK_LIB([z],[gzopen], [], [])
-AC_CHECK_LIB([ssl],[SSL_CTX_new], [], [AC_MSG_ERROR([OpenSSL library required])])
+AC_CHECK_LIB([ssl],[SSL_library_init], [], [AC_MSG_ERROR([OpenSSL library required])])
 AC_CHECK_LIB([crypto],[EVP_DigestFinal_ex], [], [AC_MSG_ERROR([OpenSSL library required])])
 
 AM_CONDITIONAL([WANT_JANSSON], [test x$request_jansson = xtrue])
@@ -157,6 +157,6 @@ AC_SUBST(CUDA_LIBS)
 AC_SUBST(CUDA_LDFLAGS)
 AC_SUBST(NVCC)
 
-AC_SUBST(OPENMP_CFLAGS)
+AC_SUBST(OPENMP_CFLAGS) 
 
 AC_OUTPUT

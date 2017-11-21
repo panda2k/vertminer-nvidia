@@ -25,16 +25,12 @@ extern char* rpc_user;
 extern char* rpc_pass;
 extern char* short_url;
 
-extern struct work _ALIGN(64) g_work;
-extern struct stratum_ctx stratum;
-extern pthread_mutex_t stratum_work_lock;
+extern struct stratum_ctx * volatile stratum;
 extern pthread_mutex_t stats_lock;
-extern bool stratum_need_reset;
 extern time_t firstwork_time;
 
-extern volatile time_t g_work_time;
-extern volatile int pool_switch_count;
-extern volatile bool pool_is_switching;
+extern struct work _ALIGN(64) g_work[MAX_STRATUM_THREADS];
+extern volatile time_t g_work_time[MAX_STRATUM_THREADS];
 extern uint8_t conditional_state[MAX_GPUS];
 
 extern double thr_hashrates[MAX_GPUS];
@@ -94,7 +90,7 @@ void pool_set_creds(struct pool_infos *p, char *full_rpc_url, char *short_rpc_ur
 }
 
 // fill the unset pools options with cmdline ones 
-void pool_init_defaults(struct pool_infos *poolinfos, int number_of_pools)
+void pool_init_defaults(struct stratum_ctx * ctx, struct pool_infos *poolinfos, int number_of_pools)
 {
 	
 	for (int i=0; i<number_of_pools; i++) {
@@ -105,6 +101,7 @@ void pool_init_defaults(struct pool_infos *poolinfos, int number_of_pools)
 		if (poolinfos[i].scantime == -1) poolinfos[i].scantime = opt_scantime;
 		if (poolinfos[i].shares_limit == -1) poolinfos[i].shares_limit = opt_shares_limit;
 		if (poolinfos[i].time_limit == -1) poolinfos[i].time_limit = opt_time_limit;
+		poolinfos[i].stratum = ctx;
 	}
 }
 
@@ -150,19 +147,18 @@ void pool_set_attr(struct pool_infos *p, const char* key, char* arg)
 }
 
 // pool switching code
-bool pool_switch(int thr_id, int pooln)
+bool pool_switch(struct stratum_ctx *ctx, int pooln)
 {
-	int prevn = cur_pooln;
+	int prevn = ctx->cur_pooln;
 	bool algo_switch = false;
-	struct pool_infos *prev = &pools[cur_pooln];
+	struct pool_infos *prev = &ctx->pools[stratum->cur_pooln];
 	struct pool_infos* p = NULL;
 
-	stratum_free_job(&stratum);
-	prev->stratum = stratum;
+	stratum_free_job(ctx);
 
-	if (pooln < (num_pools+1)) {
-		cur_pooln = pooln;
-		p = &pools[cur_pooln];
+	if (pooln < (ctx->num_pools+1)) {
+		ctx->cur_pooln = pooln;
+		p = &ctx->pools[stratum->cur_pooln];
 	} else {
 		applog(LOG_ERR, "Switch to inexistant pool %d!", pooln);
 		return false;
@@ -171,7 +167,7 @@ bool pool_switch(int thr_id, int pooln)
 	// save global attributes
 	prev->check_dups = check_dups;
 
-	pthread_mutex_lock(&stratum_work_lock);
+	pthread_mutex_lock(&ctx->work_lock);
 
 	free(rpc_user); rpc_user = strdup(p->user);
 	free(rpc_pass); rpc_pass = strdup(p->pass);
@@ -188,16 +184,16 @@ bool pool_switch(int thr_id, int pooln)
 	// yiimp stats reporting
 	opt_stratum_stats = (strstr(p->pass, "stats") != NULL) || (strcmp(p->user, "benchmark") == 0);
 
-	pthread_mutex_unlock(&stratum_work_lock);
+	pthread_mutex_unlock(&ctx->work_lock);
 
-	if (prevn != cur_pooln) {
+	if (prevn != ctx->cur_pooln) {
 
-		pool_switch_count++;
+		ctx->pool_switch_count++;
 		net_diff = 0;
-		g_work_time = 0;
-		g_work.data[0] = 0;
-		pool_is_switching = true;
-		stratum_need_reset = true;
+		g_work_time[ctx->id] = 0;
+		g_work[ctx->id].data[0] = 0;
+		ctx->pool_is_switching = true;
+		ctx->need_reset = true;
 		// used to get the pool uptime
 		firstwork_time = time(NULL);
 		restart_threads();
@@ -208,29 +204,27 @@ bool pool_switch(int thr_id, int pooln)
 		// restore flags
 		check_dups = p->check_dups;
 
-
-		// temporary... until stratum code cleanup
-		stratum = p->stratum;
-		stratum.pooln = cur_pooln;
+		ctx->pooln = ctx->cur_pooln;
 
 		// unlock the stratum thread
-		tq_push(thr_info[stratum_thr_id].q, strdup(rpc_url));
-		applog(LOG_BLUE, "Switch to stratum pool %d: %s", cur_pooln,
+		printf("pushing %s stratum\n", rpc_url);
+		tq_push(ctx->thread->q, strdup(rpc_url));
+		applog(LOG_BLUE, "Switch to stratum pool %d: %s", ctx->cur_pooln,
 			strlen(p->name) ? p->name : p->short_url);
 	}
 	return true;
 }
 
 // search available pool
-int pool_get_first_valid(struct pool_infos *infos, int startfrom)
+int pool_get_first_valid(struct stratum_ctx * ctx, int startfrom)
 {
 	int next = 0;
-	for (int i=0; i<num_pools; i++) {
-		int pooln = (startfrom + i) % num_pools;
+	for (int i=0; i<ctx->num_pools; i++) {
+		int pooln = (startfrom + i) % ctx->num_pools;
 		
-		if (!(infos[pooln].status & POOL_ST_VALID))
+		if (!(ctx->pools[pooln].status & POOL_ST_VALID))
 			continue;
-		if (infos[pooln].status & (POOL_ST_DISABLED | POOL_ST_REMOVED))
+		if (ctx->pools[pooln].status & (POOL_ST_DISABLED | POOL_ST_REMOVED))
 			continue;
 		next = pooln;
 		break;
@@ -239,11 +233,11 @@ int pool_get_first_valid(struct pool_infos *infos, int startfrom)
 }
 
 // switch to next available pool
-bool pool_switch_next(struct pool_infos *infos, int thr_id)
+bool pool_switch_next(struct stratum_ctx * ctx, int thr_id)
 {
-	if (num_pools > 1) {
-		int pooln = pool_get_first_valid(infos, cur_pooln+1);
-		return pool_switch(thr_id, pooln);
+	if (ctx->num_pools > 1) {
+		int pooln = pool_get_first_valid(ctx, ctx->cur_pooln+1);
+		return pool_switch(ctx, pooln);
 	} else {
 		// no switch possible
 		if (!opt_quiet)
@@ -321,7 +315,7 @@ bool parse_pool_array(json_t *obj)
 }
 
 // debug stuff
-void pool_dump_infos(struct pool_infos *p)
+void pool_dump_infos(struct pool_infos *p, int num_pools)
 {
 	struct pool_infos *start = POOL_INFOS_HEAD(p);
 	if (opt_benchmark) return;
